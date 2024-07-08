@@ -1,3 +1,7 @@
+const AWS = require("aws-sdk");
+const dynamoDb = new AWS.DynamoDB.DocumentClient();
+const { v4: uuidv4 } = require("uuid");
+
 exports.handler = async (event) => {
   if (event.httpMethod === "POST") {
     const requestBody = JSON.parse(event.body);
@@ -22,7 +26,10 @@ exports.handler = async (event) => {
     } catch (error) {
       return {
         statusCode: 500,
-        body: JSON.stringify({ error: "Could not save message" }),
+        body: JSON.stringify({
+          error: "Could not save message",
+          details: error.message,
+        }),
       };
     }
   } else if (event.httpMethod === "GET") {
@@ -39,8 +46,16 @@ exports.handler = async (event) => {
     } catch (error) {
       return {
         statusCode: 500,
-        body: JSON.stringify({ error: "Could not fetch messages" }),
+        body: JSON.stringify({
+          error: "Could not fetch messages",
+          details: error.message,
+        }),
       };
     }
+  } else {
+    return {
+      statusCode: 400,
+      body: JSON.stringify({ error: "Unsupported HTTP method" }),
+    };
   }
 };
