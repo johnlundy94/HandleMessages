@@ -71,8 +71,11 @@ exports.handler = async (event) => {
       };
     }
   } else if (event.httpMethod === "GET") {
+    const { email } = event.pathParameters;
     const params = {
       TableName: "Messages",
+      FilterExpression: "email = :email",
+      ExpressionAttributeValues: { ":email": email },
     };
 
     try {
