@@ -36,6 +36,22 @@ const sendEmail = async (recipientEmail, subject, textContent) => {
 exports.handler = async (event) => {
   console.log("Received event:", JSON.stringify(event, null, 2));
 
+  const headers = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Content-Type,Authorization",
+    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+  };
+
+  if (event.httpMethod === "OPTIONS") {
+    return {
+      statusCode: 200,
+      headers,
+      body: JSON.stringify({
+        message: "CORS preflight check successful",
+      }),
+    };
+  }
+
   if (event.httpMethod === "POST") {
     const requestBody = JSON.parse(event.body);
     const { clientId, message, email } = requestBody;
@@ -56,6 +72,7 @@ exports.handler = async (event) => {
       await sendEmail(email, "New Message from Admin", message);
       return {
         statusCode: 200,
+        headers,
         body: JSON.stringify({
           message: "Message saved and email sent successfully!",
         }),
@@ -64,6 +81,7 @@ exports.handler = async (event) => {
       console.error("Error saving message or sending email:", error);
       return {
         statusCode: 500,
+        headers,
         body: JSON.stringify({
           error: "Could not save message or send email",
           details: error.message,
@@ -82,12 +100,14 @@ exports.handler = async (event) => {
       const data = await dynamoDb.scan(params).promise();
       return {
         statusCode: 200,
+        headers,
         body: JSON.stringify(data.Items),
       };
     } catch (error) {
       console.error("Error fetching messages:", error);
       return {
         statusCode: 500,
+        headers,
         body: JSON.stringify({
           error: "Could not fetch messages",
           details: error.message,
@@ -97,6 +117,7 @@ exports.handler = async (event) => {
   } else {
     return {
       statusCode: 400,
+      headers,
       body: JSON.stringify({ error: "Unsupported HTTP method" }),
     };
   }
