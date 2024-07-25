@@ -7,7 +7,7 @@ const mailjet = Mailjet.apiConnect(
   process.env.MAILJET_SECRET_KEY
 );
 
-const sendEmail = async (recipientEmail, subject, textContent) => {
+const sendEmail = async (recipientEmail, subject, textContent, clientId) => {
   try {
     const request = await mailjet.post("send", { version: "v3.1" }).request({
       Messages: [
@@ -23,7 +23,7 @@ const sendEmail = async (recipientEmail, subject, textContent) => {
             },
           ],
           Subject: subject,
-          TextPart: textContent,
+          TextPart: `${textContent}\n\n<!-- ClientId: ${clientId} -->`,
         },
       ],
     });
@@ -53,40 +53,94 @@ exports.handler = async (event) => {
   }
 
   if (event.httpMethod === "POST") {
-    const requestBody = JSON.parse(event.body);
-    const { clientId, message, email } = requestBody;
+    // Differentiate between sending and receiving emails based on the path
+    if (event.path === "/messages") {
+      const requestBody = JSON.parse(event.body);
+      const { clientId, message, email } = requestBody;
 
-    const params = {
-      TableName: "Messages",
-      Item: {
-        messageId: uuidv4(),
-        clientId: clientId,
-        message: message,
-        email: email,
-        timestamp: new Date().toISOString(),
-      },
-    };
+      const params = {
+        TableName: "Messages",
+        Item: {
+          messageId: uuidv4(),
+          clientId: clientId,
+          message: message,
+          email: email,
+          timestamp: new Date().toISOString(),
+        },
+      };
 
-    try {
-      await dynamoDb.put(params).promise();
-      await sendEmail(email, "New Message from Admin", message);
-      return {
-        statusCode: 200,
-        headers,
-        body: JSON.stringify({
-          message: "Message saved and email sent successfully!",
-        }),
+      try {
+        await dynamoDb.put(params).promise();
+        await sendEmail(email, "New Message from Admin", message, clientId);
+        return {
+          statusCode: 200,
+          headers,
+          body: JSON.stringify({
+            message: "Message saved and email sent successfully!",
+          }),
+        };
+      } catch (error) {
+        console.error("Error saving message or sending email:", error);
+        return {
+          statusCode: 500,
+          headers,
+          body: JSON.stringify({
+            error: "Could not save message or send email",
+            details: error.message,
+          }),
+        };
+      }
+    } else if (event.path === "/inbound") {
+      const requestBody = JSON.parse(event.body);
+      const { sender, recipient, subject, text } = requestBody;
+
+      const clientIdMatch = text.match(/<!-- ClientId:\s*(\d+) -->/);
+      const clientId = clientIdMatch ? clientIdMatch[1] : null;
+
+      if (!clientId) {
+        console.error("ClientId not found in email body");
+        return {
+          statusCode: 400,
+          headers,
+          body: JSON.stringify({
+            error: "ClientId not found in email body",
+          }),
+        };
+      }
+
+      const params = {
+        TableName: "Messages",
+        Item: {
+          messageId: uuidv4(),
+          clientId: clientId,
+          message: text,
+          email: sender,
+          subject: subject,
+          timestamp: new Date().toISOString(),
+        },
       };
-    } catch (error) {
-      console.error("Error saving message or sending email:", error);
-      return {
-        statusCode: 500,
-        headers,
-        body: JSON.stringify({
-          error: "Could not save message or send email",
-          details: error.message,
-        }),
-      };
+
+      try {
+        await dynamoDb.put(params).promise();
+        await notifyAdmin(params.Item);
+        return {
+          statusCode: 200,
+          headers,
+          body: JSON.stringify({
+            message: "Inbound email processed and stored successfully!",
+          }),
+        };
+      } catch (error) {
+        console.error("Error saving inbound email:", error);
+        return {
+          statusCode: 500,
+          headers,
+          body: JSON.stringify({
+            error: "Could not process inbound email",
+            details: error.message,
+          }),
+        };
+      }
     }
   } else if (event.httpMethod === "GET") {
     const { email } = event.pathParameters;
